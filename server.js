@@ -96,6 +96,19 @@ async function bootstrap(db) {
       PRIMARY KEY (user_id, food_id),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      order_id TEXT NOT NULL UNIQUE,
+      items TEXT NOT NULL,
+      total INTEGER NOT NULL,
+      discount INTEGER NOT NULL DEFAULT 0,
+      method TEXT NOT NULL,
+      address TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Preparing',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
   // Reseed foods on every start to pick up new items
   await db.run("DELETE FROM foods");
@@ -177,6 +190,53 @@ async function main() {
     }
     await stmt.finalize();
     res.json({ ok: true });
+  });
+
+  // ── Orders ──────────────────────────────────────────────────
+  app.post("/api/orders", authRequired, async (req, res) => {
+    try {
+      const { orderId, items, total, method, address, discount = 0 } = req.body || {};
+      if (!orderId || !items || !total || !method || !address)
+        return res.status(400).json({ error: "Missing required fields" });
+      await db.run(
+        "INSERT OR IGNORE INTO orders (user_id, order_id, items, total, discount, method, address) VALUES (?,?,?,?,?,?,?)",
+        req.user.id, orderId, JSON.stringify(items), total, discount, method, address
+      );
+      res.json({ ok: true, orderId });
+    } catch (e) { res.status(500).json({ error: "Order save failed" }); }
+  });
+
+  app.get("/api/orders", authRequired, async (req, res) => {
+    try {
+      const rows = await db.all(
+        "SELECT order_id, items, total, discount, method, address, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+        req.user.id
+      );
+      const orders = rows.map(r => ({
+        id: r.order_id,
+        items: JSON.parse(r.items),
+        total: r.total,
+        discount: r.discount,
+        method: r.method,
+        address: r.address,
+        status: r.status,
+        time: r.created_at
+      }));
+      res.json({ orders });
+    } catch { res.status(500).json({ error: "Fetch orders failed" }); }
+  });
+
+  app.patch("/api/orders/:orderId/status", authRequired, async (req, res) => {
+    try {
+      const { status } = req.body || {};
+      const allowed = ["Preparing", "Out for Delivery", "Delivered", "Cancelled"];
+      if (!allowed.includes(status)) return res.status(400).json({ error: "Invalid status" });
+      await db.run(
+        "UPDATE orders SET status = ? WHERE order_id = ? AND user_id = ?",
+        status, req.params.orderId, req.user.id
+      );
+      res.json({ ok: true });
+    } catch { res.status(500).json({ error: "Status update failed" }); }
   });
 
   app.use(express.static(__dirname));
