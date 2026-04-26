@@ -72,6 +72,9 @@
           </div>
         </div>
 
+        <button type="button" id="ordersToggle" class="icon-btn" aria-label="My orders" title="Order history" style="position:relative">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+        </button>
         <button type="button" id="cartToggle" class="cart-btn" aria-label="Open cart">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           <span id="cartCount" class="cart-badge">0</span>
@@ -233,6 +236,224 @@
       </div>
     </article>
   </template>
+
+  <!-- Payment Modal -->
+  <div id="paymentOverlay" class="overlay" style="z-index:110"></div>
+  <div id="paymentModal" class="payment-modal glass" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle">
+    <div class="payment-modal-header">
+      <h2 id="paymentModalTitle">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Checkout
+      </h2>
+      <button type="button" id="closePayment" class="icon-btn" aria-label="Close payment">✕</button>
+    </div>
+
+    <!-- Steps indicator -->
+    <div class="payment-steps">
+      <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Delivery</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Payment</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Confirm</span></div>
+    </div>
+
+    <!-- Step 1: Delivery Details -->
+    <div id="payStep1" class="pay-step active">
+      <div class="pay-section-label">Delivery Address</div>
+      <div class="pay-field-group">
+        <div class="pay-field">
+          <label for="payName">Full Name</label>
+          <input id="payName" type="text" placeholder="Ravi Kumar" autocomplete="name" />
+        </div>
+        <div class="pay-field">
+          <label for="payPhone">Phone Number</label>
+          <input id="payPhone" type="tel" placeholder="+91 98765 43210" autocomplete="tel" />
+        </div>
+      </div>
+      <div class="pay-field">
+        <label for="payAddress">Street Address</label>
+        <input id="payAddress" type="text" placeholder="12 MG Road, Connaught Place" autocomplete="street-address" />
+      </div>
+      <div class="pay-field-group">
+        <div class="pay-field">
+          <label for="payCity">City</label>
+          <input id="payCity" type="text" placeholder="New Delhi" autocomplete="address-level2" />
+        </div>
+        <div class="pay-field">
+          <label for="payPincode">PIN Code</label>
+          <input id="payPincode" type="text" placeholder="110001" maxlength="6" autocomplete="postal-code" />
+        </div>
+      </div>
+      <div class="pay-field">
+        <label for="payInstructions">Delivery Instructions <span class="optional">(optional)</span></label>
+        <input id="payInstructions" type="text" placeholder="Ring the bell, leave at door…" />
+      </div>
+      <div class="pay-nav">
+        <span></span>
+        <button type="button" class="primary-btn" id="payNext1">Continue to Payment →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Payment Method -->
+    <div id="payStep2" class="pay-step">
+      <div class="pay-section-label">Choose Payment Method</div>
+      <div class="pay-methods" role="radiogroup" aria-label="Payment method">
+        <label class="pay-method-card active">
+          <input type="radio" name="payMethod" value="upi" checked />
+          <div class="pay-method-icon">📱</div>
+          <div class="pay-method-body">
+            <strong>UPI / GPay</strong>
+            <span>Instant · No fees</span>
+          </div>
+          <div class="pay-method-check"></div>
+        </label>
+        <label class="pay-method-card">
+          <input type="radio" name="payMethod" value="card" />
+          <div class="pay-method-icon">💳</div>
+          <div class="pay-method-body">
+            <strong>Credit / Debit Card</strong>
+            <span>Visa, Mastercard, RuPay</span>
+          </div>
+          <div class="pay-method-check"></div>
+        </label>
+        <label class="pay-method-card">
+          <input type="radio" name="payMethod" value="netbanking" />
+          <div class="pay-method-icon">🏦</div>
+          <div class="pay-method-body">
+            <strong>Net Banking</strong>
+            <span>All major banks</span>
+          </div>
+          <div class="pay-method-check"></div>
+        </label>
+        <label class="pay-method-card">
+          <input type="radio" name="payMethod" value="cod" />
+          <div class="pay-method-icon">💵</div>
+          <div class="pay-method-body">
+            <strong>Cash on Delivery</strong>
+            <span>Pay when delivered</span>
+          </div>
+          <div class="pay-method-check"></div>
+        </label>
+      </div>
+
+      <!-- UPI sub-form -->
+      <div id="upiForm" class="pay-subform">
+        <div class="pay-field">
+          <label for="payUpiId">UPI ID</label>
+          <input id="payUpiId" type="text" placeholder="yourname@upi" />
+        </div>
+      </div>
+
+      <!-- Card sub-form -->
+      <div id="cardForm" class="pay-subform hidden">
+        <div class="pay-field">
+          <label for="payCardNum">Card Number</label>
+          <input id="payCardNum" type="text" placeholder="1234 5678 9012 3456" maxlength="19" autocomplete="cc-number" />
+        </div>
+        <div class="pay-field-group">
+          <div class="pay-field">
+            <label for="payCardExp">Expiry</label>
+            <input id="payCardExp" type="text" placeholder="MM / YY" maxlength="7" autocomplete="cc-exp" />
+          </div>
+          <div class="pay-field">
+            <label for="payCardCvv">CVV</label>
+            <input id="payCardCvv" type="password" placeholder="•••" maxlength="4" autocomplete="cc-csc" />
+          </div>
+        </div>
+        <div class="pay-field">
+          <label for="payCardName">Name on Card</label>
+          <input id="payCardName" type="text" placeholder="RAVI KUMAR" autocomplete="cc-name" />
+        </div>
+      </div>
+
+      <!-- Net Banking sub-form -->
+      <div id="netbankingForm" class="pay-subform hidden">
+        <div class="pay-field">
+          <label for="payBank">Select Bank</label>
+          <select id="payBank">
+            <option value="">— Choose your bank —</option>
+            <option value="sbi">State Bank of India</option>
+            <option value="hdfc">HDFC Bank</option>
+            <option value="icici">ICICI Bank</option>
+            <option value="axis">Axis Bank</option>
+            <option value="kotak">Kotak Mahindra Bank</option>
+            <option value="pnb">Punjab National Bank</option>
+            <option value="other">Other Bank</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- COD note -->
+      <div id="codForm" class="pay-subform hidden">
+        <p class="cod-note">💵 Pay in cash when your order arrives. Keep exact change ready.</p>
+      </div>
+
+      <div class="pay-nav">
+        <button type="button" class="icon-btn" id="payBack1">← Back</button>
+        <button type="button" class="primary-btn" id="payNext2">Review Order →</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Order Summary & Confirm -->
+    <div id="payStep3" class="pay-step">
+      <div class="pay-section-label">Order Summary</div>
+      <div id="payOrderSummary" class="pay-order-summary"></div>
+
+      <div class="pay-promo-row">
+        <input id="promoInput" type="text" placeholder="Promo code (try HUNGRY10)" class="promo-input" />
+        <button type="button" id="applyPromo" class="icon-btn promo-btn">Apply</button>
+      </div>
+      <div id="promoMsg" class="promo-msg hidden"></div>
+
+      <div class="pay-totals">
+        <div class="pay-total-row"><span>Subtotal</span><strong id="finalSubtotal">₹0</strong></div>
+        <div class="pay-total-row"><span>Delivery fee</span><strong id="finalDelivery">₹40</strong></div>
+        <div class="pay-total-row discount hidden" id="discountRow"><span>Discount 🎉</span><strong id="finalDiscount">−₹0</strong></div>
+        <div class="pay-total-row grand"><span>Total</span><strong id="finalTotal">₹0</strong></div>
+      </div>
+
+      <div class="pay-method-summary glass-inner" id="payMethodSummary"></div>
+
+      <div class="pay-nav">
+        <button type="button" class="icon-btn" id="payBack2">← Back</button>
+        <button type="button" class="primary-btn pay-confirm-btn" id="payConfirm">
+          <span id="payConfirmLabel">Place Order 🎉</span>
+          <span id="payConfirmSpinner" class="spinner tiny hidden"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 4: Success -->
+    <div id="payStep4" class="pay-step pay-success">
+      <div class="success-anim">
+        <svg class="success-check" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+          <circle class="success-circle" cx="26" cy="26" r="25" fill="none"/>
+          <path class="success-tick" fill="none" d="M14 27l8 8 16-16"/>
+        </svg>
+      </div>
+      <h2>Order Placed! 🎉</h2>
+      <p id="successMsg">Your food is being prepared.</p>
+      <div id="successOrderId" class="success-order-id"></div>
+      <div class="success-eta">
+        <span>🛵</span>
+        <span>Estimated delivery: <strong id="etaTime">30–45 min</strong></span>
+      </div>
+      <button type="button" class="primary-btn" id="successDone" style="margin-top:1.5rem;width:100%;justify-content:center">Back to Menu</button>
+    </div>
+  </div>
+
+  <!-- Order History Panel -->
+  <aside id="ordersPanel" class="orders-panel glass">
+    <div class="orders-header">
+      <h2>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+        My Orders
+      </h2>
+      <button type="button" id="closeOrders" class="icon-btn" aria-label="Close orders">✕</button>
+    </div>
+    <div id="ordersList" class="orders-list"></div>
+  </aside>
+  <div id="ordersOverlay" class="overlay" style="z-index:75"></div>
 
   <script src="app.js"></script>
 </body>

@@ -470,3 +470,350 @@ grid();
 recs();
 paint();
 wx();
+
+// ── PAYMENT SYSTEM ────────────────────────────────────────────
+
+const PROMO_CODES = {
+  "HUNGRY10": 10,   // 10% off
+  "FIRSTORDER": 15, // 15% off
+  "SAVE20": 20,     // 20% off
+  "FLAT50": null,   // flat ₹50 off (handled specially)
+};
+
+let PROMO_ACTIVE = null; // { code, pct, flat }
+
+function rupees2(n) { return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 }); }
+function genOrderId() {
+  return "HH-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2,5).toUpperCase();
+}
+
+// ── Step navigation helpers ────────────────────────────────────
+function setPayStep(n) {
+  document.querySelectorAll(".pay-step").forEach((s, i) => {
+    s.classList.toggle("active", i === n - 1);
+  });
+  document.querySelectorAll(".payment-steps .step").forEach((s, i) => {
+    s.classList.toggle("active", i === n - 1);
+    s.classList.toggle("done", i < n - 1);
+  });
+  document.querySelectorAll(".step-line").forEach((l, i) => {
+    l.classList.toggle("done", i < n - 1);
+  });
+}
+
+// ── Open / Close payment modal ─────────────────────────────────
+function openPayment() {
+  if (!S.cart.length) return toast("Your cart is empty!", "warn");
+  PROMO_ACTIVE = null;
+  document.getElementById("promoInput").value = "";
+  document.getElementById("promoMsg").classList.add("hidden");
+  document.getElementById("discountRow").classList.add("hidden");
+  setPayStep(1);
+  refreshPaySummary();
+  $("paymentModal").classList.add("open");
+  $("paymentOverlay").classList.add("visible");
+}
+function closePayment() {
+  $("paymentModal").classList.remove("open");
+  $("paymentOverlay").classList.remove("visible");
+}
+
+// ── Validate step 1 ────────────────────────────────────────────
+function validateStep1() {
+  let ok = true;
+  const fields = [
+    { id: "payName",    label: "name" },
+    { id: "payPhone",   label: "phone" },
+    { id: "payAddress", label: "address" },
+    { id: "payCity",    label: "city" },
+    { id: "payPincode", label: "PIN code" },
+  ];
+  fields.forEach(({ id, label }) => {
+    const el = $(id);
+    const val = el.value.trim();
+    const empty = !val;
+    const pinErr = id === "payPincode" && !/^\d{6}$/.test(val);
+    const phoneErr = id === "payPhone" && !/^[+\d\s\-]{8,}$/.test(val);
+    if (empty || pinErr || phoneErr) {
+      el.classList.add("error");
+      ok = false;
+    } else {
+      el.classList.remove("error");
+    }
+  });
+  if (!ok) toast("Please fill all required fields correctly", "warn");
+  return ok;
+}
+
+// ── Validate step 2 ────────────────────────────────────────────
+function validateStep2() {
+  const method = document.querySelector("input[name='payMethod']:checked")?.value;
+  if (method === "upi") {
+    const upi = $("payUpiId").value.trim();
+    if (!upi || !upi.includes("@")) {
+      $("payUpiId").classList.add("error");
+      toast("Enter a valid UPI ID (e.g. name@upi)", "warn");
+      return false;
+    }
+    $("payUpiId").classList.remove("error");
+  }
+  if (method === "card") {
+    const num = $("payCardNum").value.replace(/\s/g, "");
+    const exp = $("payCardExp").value.trim();
+    const cvv = $("payCardCvv").value.trim();
+    const name = $("payCardName").value.trim();
+    if (num.length < 16 || !exp || cvv.length < 3 || !name) {
+      toast("Please fill in all card details correctly", "warn");
+      return false;
+    }
+  }
+  if (method === "netbanking") {
+    if (!$("payBank").value) {
+      toast("Please select a bank", "warn");
+      return false;
+    }
+  }
+  return true;
+}
+
+// ── Refresh order summary in step 3 ───────────────────────────
+function refreshPaySummary() {
+  const { p: subtotal } = totals();
+  const delivery = 40;
+  let discount = 0;
+  if (PROMO_ACTIVE) {
+    if (PROMO_ACTIVE.flat) discount = PROMO_ACTIVE.flat;
+    else discount = Math.round(subtotal * PROMO_ACTIVE.pct / 100);
+  }
+  const grand = Math.max(0, subtotal + delivery - discount);
+
+  // Order lines
+  const summEl = $("payOrderSummary");
+  if (summEl) {
+    summEl.innerHTML = "";
+    S.cart.forEach(e => {
+      const x = FOODS.find(f => f.id === e.id);
+      if (!x) return;
+      const row = document.createElement("div");
+      row.className = "pay-order-row";
+      row.innerHTML = `<span>${x.name} × ${e.qty}</span><strong>${rupees2(x.price * e.qty)}</strong>`;
+      summEl.appendChild(row);
+    });
+  }
+
+  $("finalSubtotal").textContent = rupees2(subtotal);
+  $("finalDelivery").textContent = rupees2(delivery);
+  $("finalTotal").textContent = rupees2(grand);
+
+  const discRow = $("discountRow");
+  if (PROMO_ACTIVE && discount > 0) {
+    $("finalDiscount").textContent = "−" + rupees2(discount);
+    discRow.classList.remove("hidden");
+  } else {
+    discRow.classList.add("hidden");
+  }
+
+  // Payment method summary
+  const method = document.querySelector("input[name='payMethod']:checked")?.value || "upi";
+  const methodLabels = { upi: "📱 UPI / GPay", card: "💳 Card", netbanking: "🏦 Net Banking", cod: "💵 Cash on Delivery" };
+  const sumEl = $("payMethodSummary");
+  if (sumEl) sumEl.textContent = "Paying via: " + (methodLabels[method] || method);
+}
+
+// ── Apply promo ────────────────────────────────────────────────
+function applyPromo() {
+  const code = $("promoInput").value.trim().toUpperCase();
+  const msg = $("promoMsg");
+  msg.classList.remove("hidden", "ok", "fail");
+  if (!code) { msg.textContent = "Enter a promo code"; msg.classList.add("fail"); return; }
+  if (code === "FLAT50") {
+    PROMO_ACTIVE = { code, flat: 50 };
+    msg.textContent = "✅ FLAT50 applied — ₹50 off!";
+    msg.classList.add("ok");
+    toast("🎉 Promo applied: ₹50 off", "success");
+  } else if (PROMO_CODES[code]) {
+    PROMO_ACTIVE = { code, pct: PROMO_CODES[code] };
+    msg.textContent = `✅ ${code} applied — ${PROMO_CODES[code]}% off!`;
+    msg.classList.add("ok");
+    toast(`🎉 Promo applied: ${PROMO_CODES[code]}% off`, "success");
+  } else {
+    PROMO_ACTIVE = null;
+    msg.textContent = "❌ Invalid promo code";
+    msg.classList.add("fail");
+  }
+  refreshPaySummary();
+}
+
+// ── Place order ────────────────────────────────────────────────
+async function placeOrder() {
+  const btn = $("payConfirm");
+  const label = $("payConfirmLabel");
+  const spinner = $("payConfirmSpinner");
+
+  btn.disabled = true;
+  label.textContent = "Processing…";
+  spinner.classList.remove("hidden");
+
+  // Simulate payment processing (1.8s)
+  await new Promise(r => setTimeout(r, 1800));
+
+  const { p: subtotal } = totals();
+  const delivery = 40;
+  let discount = 0;
+  if (PROMO_ACTIVE) {
+    if (PROMO_ACTIVE.flat) discount = PROMO_ACTIVE.flat;
+    else discount = Math.round(subtotal * PROMO_ACTIVE.pct / 100);
+  }
+  const grand = Math.max(0, subtotal + delivery - discount);
+  const orderId = genOrderId();
+  const method = document.querySelector("input[name='payMethod']:checked")?.value || "upi";
+  const methodLabels = { upi: "UPI", card: "Card", netbanking: "Net Banking", cod: "Cash on Delivery" };
+
+  // Build order record for history
+  const order = {
+    id: orderId,
+    items: S.cart.map(e => {
+      const x = FOODS.find(f => f.id === e.id);
+      return { name: x?.name || "?", qty: e.qty, price: (x?.price || 0) * e.qty };
+    }),
+    subtotal, delivery, discount, grand,
+    method: methodLabels[method],
+    address: `${$("payAddress").value.trim()}, ${$("payCity").value.trim()} — ${$("payPincode").value.trim()}`,
+    time: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }),
+    status: "Preparing"
+  };
+
+  // Save to session orders
+  S.orders = S.orders || [];
+  S.orders.unshift(order);
+  try { localStorage.setItem("hungryhub-orders", JSON.stringify(S.orders)); } catch {}
+
+  // Try save to backend if logged in
+  try {
+    const token = localStorage.getItem("hungryhub-token");
+    if (token) {
+      await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ orderId, items: S.cart, total: grand, method: methodLabels[method], address: order.address, discount })
+      });
+    }
+  } catch {}
+
+  // Clear cart
+  S.cart = [];
+  paint(); grid();
+  closeCart();
+
+  // Show success step
+  spinner.classList.add("hidden");
+  label.textContent = "Place Order 🎉";
+  btn.disabled = false;
+
+  $("successMsg").textContent = `Paid ${rupees2(grand)} via ${methodLabels[method]}`;
+  $("successOrderId").textContent = "Order ID: " + orderId;
+  const eta = 25 + Math.floor(Math.random() * 20);
+  $("etaTime").textContent = eta + "–" + (eta + 10) + " min";
+  setPayStep(4);
+}
+
+// ── Card number formatting ─────────────────────────────────────
+const cardNumInput = $("payCardNum");
+if (cardNumInput) {
+  cardNumInput.oninput = function () {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  };
+}
+const cardExpInput = $("payCardExp");
+if (cardExpInput) {
+  cardExpInput.oninput = function () {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + " / " + v.slice(2);
+    this.value = v;
+  };
+}
+
+// ── Payment method tab switching ──────────────────────────────
+document.querySelectorAll("input[name='payMethod']").forEach(radio => {
+  radio.addEventListener("change", function () {
+    document.querySelectorAll(".pay-method-card").forEach(c => c.classList.remove("active"));
+    this.closest(".pay-method-card").classList.add("active");
+    $("upiForm").classList.toggle("hidden", this.value !== "upi");
+    $("cardForm").classList.toggle("hidden", this.value !== "card");
+    $("netbankingForm").classList.toggle("hidden", this.value !== "netbanking");
+    $("codForm").classList.toggle("hidden", this.value !== "cod");
+  });
+});
+
+// ── Button wiring ─────────────────────────────────────────────
+$("closePayment").onclick = closePayment;
+$("paymentOverlay").onclick = closePayment;
+$("payNext1").onclick = () => { if (validateStep1()) { setPayStep(2); } };
+$("payBack1").onclick = () => setPayStep(1);
+$("payNext2").onclick = () => {
+  if (!validateStep2()) return;
+  refreshPaySummary();
+  setPayStep(3);
+};
+$("payBack2").onclick = () => setPayStep(2);
+$("payConfirm").onclick = placeOrder;
+$("successDone").onclick = closePayment;
+$("applyPromo").onclick = applyPromo;
+$("promoInput").onkeydown = (e) => { if (e.key === "Enter") applyPromo(); };
+
+// Override checkout button to open payment modal
+$("checkoutBtn").onclick = () => {
+  if (!S.cart.length) return toast("Your cart is empty!", "warn");
+  closeCart();
+  setTimeout(openPayment, 180);
+};
+
+// ── Orders History ─────────────────────────────────────────────
+S.orders = [];
+try {
+  const saved = localStorage.getItem("hungryhub-orders");
+  if (saved) S.orders = JSON.parse(saved);
+} catch {}
+
+function renderOrders() {
+  const list = $("ordersList");
+  list.innerHTML = "";
+  if (!S.orders.length) {
+    list.innerHTML = '<p class="empty-hint" style="padding:.5rem">No orders yet. Place your first order!</p>';
+    return;
+  }
+  S.orders.forEach(o => {
+    const card = document.createElement("div");
+    card.className = "order-card";
+    const preview = o.items.slice(0, 3).map(i => `${i.name} ×${i.qty}`).join(", ");
+    const more = o.items.length > 3 ? ` +${o.items.length - 3} more` : "";
+    card.innerHTML = `
+      <div class="order-card-head">
+        <span class="order-id">${o.id}</span>
+        <span class="order-status ${o.status === "Delivered" ? "delivered" : "preparing"}">${o.status}</span>
+      </div>
+      <div class="order-card-body">
+        <div class="order-items-preview">${preview}${more}</div>
+        <div class="order-meta">
+          <span>${o.time}</span>
+          <span class="order-total">${rupees2(o.grand)}</span>
+        </div>
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+function openOrders() {
+  renderOrders();
+  $("ordersPanel").classList.add("open");
+  $("ordersOverlay").classList.add("visible");
+}
+function closeOrders() {
+  $("ordersPanel").classList.remove("open");
+  $("ordersOverlay").classList.remove("visible");
+}
+
+$("ordersToggle").onclick = openOrders;
+$("closeOrders").onclick = closeOrders;
+$("ordersOverlay").onclick = closeOrders;
